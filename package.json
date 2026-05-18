@@ -1,0 +1,8 @@
+{
+  "name": "discord-channel-pins",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vencord userplugin — flat list of pinned channels across all Discord servers in one view.",
+  "license": "MIT",
+  "author": "Ian Brent"
+}
