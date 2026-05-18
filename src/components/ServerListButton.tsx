@@ -1,6 +1,6 @@
 import { React } from "@webpack/common";
 
-import { getPinsMode, subscribePinsMode, togglePinsMode } from "../store";
+import { debugLog, getPinsMode, subscribePinsMode, togglePinsMode } from "../store";
 
 export function ServerListButton() {
     const [active, setActive] = React.useState(getPinsMode());
@@ -17,7 +17,7 @@ export function ServerListButton() {
                 onClick={(e: any) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("[ChannelPins] toggle clicked, active was", active);
+                    debugLog("toggle clicked, active was", active);
                     togglePinsMode();
                 }}
                 aria-label="Channel Pins"

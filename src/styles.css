@@ -127,6 +127,49 @@
     color: var(--channels-default, #949ba4);
     padding: 12px 8px 2px 16px;
     letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.vc-cp-category-header.collapsible {
+    cursor: pointer;
+    user-select: none;
+}
+
+.vc-cp-category-header.collapsible:hover {
+    color: var(--interactive-hover, #dbdee1);
+}
+
+.vc-cp-category-chevron {
+    font-size: 10px;
+    width: 12px;
+    display: inline-block;
+}
+
+.vc-cp-category-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-cp-channel-name-wrap {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.vc-cp-channel-subtitle {
+    font-size: 11px;
+    color: var(--channels-default, #949ba4);
+    opacity: 0.85;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: -2px;
 }
 
 .vc-cp-channel-row {

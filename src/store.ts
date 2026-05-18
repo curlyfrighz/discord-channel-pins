@@ -1,5 +1,10 @@
 import * as DataStore from "@api/DataStore";
 
+export const DEBUG = false;
+export function debugLog(...args: any[]) {
+    if (DEBUG) console.log("[ChannelPins]", ...args);
+}
+
 export interface ChannelPin {
     guildId: string | null;
     channelId: string;
@@ -8,10 +13,11 @@ export interface ChannelPin {
 export interface PinsData {
     servers: string[];
     channels: ChannelPin[];
+    collapsedCategories: string[];
 }
 
 const KEY = "ChannelPins_data_v2";
-const EMPTY: PinsData = { servers: [], channels: [] };
+const EMPTY: PinsData = { servers: [], channels: [], collapsedCategories: [] };
 
 let cache: PinsData | null = null;
 let pinsModeActive = false;
@@ -25,6 +31,7 @@ export async function getData(): Promise<PinsData> {
     cache = {
         servers: loaded.servers ?? [],
         channels: loaded.channels ?? [],
+        collapsedCategories: loaded.collapsedCategories ?? [],
     };
     return cache;
 }
@@ -55,6 +62,7 @@ export async function toggleServerPin(guildId: string) {
             ? d.servers.filter(id => id !== guildId)
             : [...d.servers, guildId],
         channels: d.channels,
+        collapsedCategories: d.collapsedCategories,
     };
     await persist();
 }
@@ -67,8 +75,26 @@ export async function toggleChannelPin(pin: ChannelPin) {
         channels: exists
             ? d.channels.filter(c => c.channelId !== pin.channelId)
             : [...d.channels, pin],
+        collapsedCategories: d.collapsedCategories,
     };
     await persist();
+}
+
+export async function toggleCategoryCollapsed(catId: string) {
+    const d = await getData();
+    const exists = d.collapsedCategories.includes(catId);
+    cache = {
+        servers: d.servers,
+        channels: d.channels,
+        collapsedCategories: exists
+            ? d.collapsedCategories.filter(id => id !== catId)
+            : [...d.collapsedCategories, catId],
+    };
+    await persist();
+}
+
+export function isCategoryCollapsedSync(catId: string): boolean {
+    return (cache?.collapsedCategories ?? []).includes(catId);
 }
 
 export function subscribeData(fn: () => void): () => void {

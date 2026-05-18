@@ -67,6 +67,11 @@ declare module "@webpack/common" {
     export const ActiveJoinedThreadsStore: any;
     export const FluxDispatcher: any;
     export const ReactDOM: { createPortal: (node: any, container: any, key?: string) => any };
+    export const UserStore: { getUser(id: string): any };
+    export const UserGuildSettingsStore: {
+        isChannelMuted(guildId: string, channelId: string): boolean;
+        isMuted(guildId: string): boolean;
+    };
     export const React: {
         useState<T>(initial: T | (() => T)): [T, (v: T | ((p: T) => T)) => void];
         useEffect(fn: () => void | (() => void), deps?: readonly any[]): void;
