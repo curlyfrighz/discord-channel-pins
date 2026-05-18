@@ -381,9 +381,14 @@ function buildSubtitle(channel: any, guildId: string | null): string {
     return guildName;
 }
 
-function scanUnread(): UnreadEntry[] {
+function scanUnread(pinnedServers: string[], pinnedChannelIds: string[]): UnreadEntry[] {
     const rs: any = ReadStateStore as any;
     const ugs: any = UserGuildSettingsStore as any;
+
+    const pinnedServerSet = new Set(pinnedServers);
+    const pinnedChannelSet = new Set(pinnedChannelIds);
+
+    if (pinnedServerSet.size === 0 && pinnedChannelSet.size === 0) return [];
 
     let ids = enumerateUnreadChannelIds();
     if (ids.length === 0) {
@@ -411,13 +416,26 @@ function scanUnread(): UnreadEntry[] {
 
         const guildId: string | null = channel.guild_id ?? null;
 
+        // Scope filter: include only if the channel is individually pinned,
+        // its guild is pinned, OR (for threads) the parent channel is
+        // individually pinned or in a pinned guild.
+        const isThread = THREAD_TYPES.includes(channel.type);
+        const parentId: string | null = channel.parent_id ?? null;
+        const channelIsPinned = pinnedChannelSet.has(channelId);
+        const guildIsPinned = !!guildId && pinnedServerSet.has(guildId);
+        const parentIsPinned =
+            isThread && parentId
+                ? pinnedChannelSet.has(parentId) || (!!guildId && pinnedServerSet.has(guildId))
+                : false;
+        if (!channelIsPinned && !guildIsPinned && !parentIsPinned) continue;
+
         if (guildId) {
             try {
                 if (ugs.isMuted?.(guildId)) continue;
                 if (ugs.isChannelMuted?.(guildId, channelId)) continue;
                 // For threads, also honor parent channel mute
-                if (THREAD_TYPES.includes(channel.type) && channel.parent_id) {
-                    if (ugs.isChannelMuted?.(guildId, channel.parent_id)) continue;
+                if (isThread && parentId) {
+                    if (ugs.isChannelMuted?.(guildId, parentId)) continue;
                 }
             } catch {
                 // ignore
@@ -504,7 +522,10 @@ export function PinsSidebar() {
     if (!visible) return null;
 
     const hasAny = data.channels.length > 0 || data.servers.length > 0;
-    const unread = scanUnread();
+    const unread = scanUnread(
+        data.servers,
+        data.channels.map(c => c.channelId),
+    );
 
     // Resolve pinned-channel rows
     const channelRows = data.channels
