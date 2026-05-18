@@ -19,6 +19,9 @@ import {
     getPinsMode,
     isCategoryCollapsedSync,
     PinsData,
+    reorderSections,
+    SECTION_PINNED_CHANNELS,
+    SECTION_UNREAD,
     setPinsMode,
     subscribeData,
     subscribePinsMode,
@@ -300,81 +303,134 @@ function GuildSection({ guildId, selectedChannelId }: GuildSectionProps) {
 interface UnreadEntry {
     channel: ChannelLike;
     guildId: string | null;
-    guildName: string;
+    subtitle: string;
 }
 
-function scanUnread(): UnreadEntry[] {
-    const out: UnreadEntry[] = [];
-    let guilds: Record<string, any> = {};
-    try {
-        guilds = (GuildStore as any).getGuilds?.() ?? {};
-    } catch {
-        return out;
-    }
+const THREAD_TYPES = [10, 11, 12]; // ANNOUNCEMENT_THREAD, PUBLIC_THREAD, PRIVATE_THREAD
 
-    const ugs: any = UserGuildSettingsStore as any;
+function enumerateUnreadChannelIds(): string[] {
     const rs: any = ReadStateStore as any;
-    const aj: any = ActiveJoinedThreadsStore as any;
-
-    for (const guildId of Object.keys(guilds)) {
-        const guild = guilds[guildId];
-        const guildName = guild?.name ?? "(unknown server)";
-
+    // Discord's ReadStateStore typically exposes one of these enumeration methods.
+    // Try each defensively; fall back to empty list if none work.
+    for (const method of ["getAllReadStates", "getReadStates", "getMutableBasicGuildChannelIds"]) {
         try {
-            if (ugs.isMuted?.(guildId)) continue;
+            if (typeof rs[method] === "function") {
+                const result = rs[method]();
+                if (Array.isArray(result) && result.length > 0) {
+                    const ids: string[] = [];
+                    for (const state of result) {
+                        const id = state?.channelId ?? state?.channel_id ?? state?.id;
+                        if (typeof id === "string") ids.push(id);
+                    }
+                    if (ids.length > 0) return ids;
+                }
+            }
         } catch {
-            // continue scanning even if mute check is unavailable
+            // try next
         }
+    }
+    return [];
+}
 
-        let groups: any = {};
-        try {
-            groups = (GuildChannelStore as any).getChannels?.(guildId) ?? {};
-        } catch {
-            continue;
-        }
-
-        const channels: any[] = (groups.SELECTABLE ?? []).map((c: any) => c.channel);
-        for (const ch of channels) {
-            if (!ch?.id) continue;
+function fallbackUnreadChannelIds(): string[] {
+    // Fallback: iterate via GuildChannelStore + ActiveJoinedThreadsStore
+    const ids: string[] = [];
+    try {
+        const guilds = (GuildStore as any).getGuilds?.() ?? {};
+        for (const guildId of Object.keys(guilds)) {
             try {
-                if (ugs.isChannelMuted?.(guildId, ch.id)) continue;
+                const groups = (GuildChannelStore as any).getChannels?.(guildId) ?? {};
+                for (const c of (groups.SELECTABLE ?? []) as any[]) {
+                    if (c?.channel?.id) ids.push(c.channel.id);
+                }
             } catch {
                 // ignore
             }
             try {
-                if (!rs.hasUnread?.(ch.id)) continue;
-            } catch {
-                continue;
-            }
-            out.push({ channel: ch, guildId, guildName });
-        }
-
-        // joined threads
-        try {
-            const threadMap = aj.getActiveJoinedThreadsForGuild?.(guildId) ?? {};
-            for (const channelThreads of Object.values(threadMap) as any[]) {
-                for (const t of Object.values(channelThreads) as any[]) {
-                    const ch = t?.channel ?? t;
-                    if (!ch?.id) continue;
-                    try {
-                        if (ugs.isChannelMuted?.(guildId, ch.id)) continue;
-                    } catch {
-                        // ignore
+                const aj: any = ActiveJoinedThreadsStore as any;
+                const threadMap = aj.getActiveJoinedThreadsForGuild?.(guildId) ?? {};
+                for (const channelThreads of Object.values(threadMap) as any[]) {
+                    for (const t of Object.values(channelThreads) as any[]) {
+                        const ch = t?.channel ?? t;
+                        if (ch?.id) ids.push(ch.id);
                     }
-                    try {
-                        if (!rs.hasUnread?.(ch.id)) continue;
-                    } catch {
-                        continue;
-                    }
-                    out.push({ channel: ch, guildId, guildName });
                 }
+            } catch {
+                // ignore
             }
-        } catch {
-            // ignore thread enumeration errors
+        }
+    } catch {
+        // ignore
+    }
+    return ids;
+}
+
+function buildSubtitle(channel: any, guildId: string | null): string {
+    if (!guildId) return "Direct Messages";
+
+    const guild: any = (GuildStore as any).getGuild?.(guildId);
+    const guildName = guild?.name ?? "(unknown server)";
+
+    // For threads, prepend the parent channel name so the user sees forum context
+    if (THREAD_TYPES.includes(channel.type) && channel.parent_id) {
+        const parent: any = ChannelStore.getChannel(channel.parent_id);
+        if (parent?.name) {
+            return `${guildName} • #${parent.name}`;
         }
     }
+    return guildName;
+}
 
-    // Sort: mention count desc, then by guild + channel name
+function scanUnread(): UnreadEntry[] {
+    const rs: any = ReadStateStore as any;
+    const ugs: any = UserGuildSettingsStore as any;
+
+    let ids = enumerateUnreadChannelIds();
+    if (ids.length === 0) {
+        debugLog("ReadStateStore enumeration unavailable, falling back");
+        ids = fallbackUnreadChannelIds();
+    }
+
+    const seen = new Set<string>();
+    const out: UnreadEntry[] = [];
+
+    for (const channelId of ids) {
+        if (seen.has(channelId)) continue;
+        seen.add(channelId);
+
+        let unread = false;
+        try {
+            unread = !!rs.hasUnread?.(channelId);
+        } catch {
+            unread = false;
+        }
+        if (!unread) continue;
+
+        const channel: any = ChannelStore.getChannel(channelId);
+        if (!channel) continue;
+
+        const guildId: string | null = channel.guild_id ?? null;
+
+        if (guildId) {
+            try {
+                if (ugs.isMuted?.(guildId)) continue;
+                if (ugs.isChannelMuted?.(guildId, channelId)) continue;
+                // For threads, also honor parent channel mute
+                if (THREAD_TYPES.includes(channel.type) && channel.parent_id) {
+                    if (ugs.isChannelMuted?.(guildId, channel.parent_id)) continue;
+                }
+            } catch {
+                // ignore
+            }
+        }
+
+        out.push({
+            channel,
+            guildId,
+            subtitle: buildSubtitle(channel, guildId),
+        });
+    }
+
     out.sort((a, b) => {
         let am = 0;
         let bm = 0;
@@ -385,20 +441,21 @@ function scanUnread(): UnreadEntry[] {
             // ignore
         }
         if (am !== bm) return bm - am;
-        if (a.guildName !== b.guildName) return a.guildName.localeCompare(b.guildName);
+        if (a.subtitle !== b.subtitle) return a.subtitle.localeCompare(b.subtitle);
         return (a.channel.name ?? "").localeCompare(b.channel.name ?? "");
     });
 
-    if (out.length > 100) {
-        debugLog("unread scan truncated", out.length, "->", 100);
-        return out.slice(0, 100);
+    if (out.length > 150) {
+        debugLog("unread scan truncated", out.length, "->", 150);
+        return out.slice(0, 150);
     }
     return out;
 }
 
 export function PinsSidebar() {
     const [visible, setVisible] = React.useState(getPinsMode());
-    const [data, setData] = React.useState({ servers: [], channels: [], collapsedCategories: [] } as PinsData);
+    const [data, setData] = React.useState({ servers: [], channels: [], collapsedCategories: [], sectionOrder: [] } as PinsData);
+    const [draggingSection, setDraggingSection] = React.useState("");
     const [selectedChannelId, setSelectedChannelId] = React.useState("");
     const [, forceRerender] = React.useState(0);
 
@@ -475,23 +532,6 @@ export function PinsSidebar() {
                 </button>
             </div>
             <div className="vc-cp-sidebar-body">
-                {unread.length > 0 && (
-                    <>
-                        <div className="vc-cp-section-header">
-                            Unread ({unread.length})
-                        </div>
-                        {unread.map(entry => (
-                            <ChannelRow
-                                key={`unread-${entry.channel.id}`}
-                                channel={entry.channel}
-                                guildId={entry.guildId}
-                                selectedChannelId={selectedChannelId}
-                                subtitle={entry.guildName}
-                            />
-                        ))}
-                    </>
-                )}
-
                 {!hasAny && unread.length === 0 && (
                     <div className="vc-cp-empty">
                         Nothing pinned yet, no unread channels.
@@ -511,28 +551,111 @@ export function PinsSidebar() {
                     </div>
                 )}
 
-                {channelRows.length > 0 && (
-                    <>
-                        <div className="vc-cp-section-header">Pinned Channels</div>
-                        {channelRows.map(({ pin, channel }) => (
-                            <ChannelRow
-                                key={pin.channelId}
-                                channel={channel}
-                                guildId={pin.guildId}
-                                selectedChannelId={selectedChannelId}
-                                showUnpin
-                            />
-                        ))}
-                    </>
-                )}
+                {data.sectionOrder.map(sectionId => {
+                    const isDragging = draggingSection === sectionId;
+                    const dragProps = {
+                        draggable: true,
+                        onDragStart: (e: any) => {
+                            setDraggingSection(sectionId);
+                            try {
+                                e.dataTransfer.effectAllowed = "move";
+                                e.dataTransfer.setData("text/plain", sectionId);
+                            } catch {
+                                // ignore
+                            }
+                        },
+                        onDragEnd: () => setDraggingSection(""),
+                        onDragOver: (e: any) => {
+                            if (!draggingSection || draggingSection === sectionId) return;
+                            e.preventDefault();
+                            try {
+                                e.dataTransfer.dropEffect = "move";
+                            } catch {
+                                // ignore
+                            }
+                        },
+                        onDrop: (e: any) => {
+                            e.preventDefault();
+                            if (!draggingSection || draggingSection === sectionId) {
+                                setDraggingSection("");
+                                return;
+                            }
+                            const order = [...data.sectionOrder];
+                            const from = order.indexOf(draggingSection);
+                            const to = order.indexOf(sectionId);
+                            if (from < 0 || to < 0) {
+                                setDraggingSection("");
+                                return;
+                            }
+                            order.splice(from, 1);
+                            order.splice(to, 0, draggingSection);
+                            reorderSections(order);
+                            setDraggingSection("");
+                        },
+                    };
 
-                {data.servers.map(guildId => (
-                    <GuildSection
-                        key={guildId}
-                        guildId={guildId}
-                        selectedChannelId={selectedChannelId}
-                    />
-                ))}
+                    const sectionClass = "vc-cp-section" + (isDragging ? " dragging" : "");
+
+                    if (sectionId === SECTION_UNREAD) {
+                        if (unread.length === 0) return null;
+                        return (
+                            <div key={sectionId} className={sectionClass} {...dragProps}>
+                                <div className="vc-cp-section-header">
+                                    <span className="vc-cp-drag-handle" title="Drag to reorder">≡</span>
+                                    <span>Unread ({unread.length})</span>
+                                </div>
+                                {unread.map(entry => (
+                                    <ChannelRow
+                                        key={`unread-${entry.channel.id}`}
+                                        channel={entry.channel}
+                                        guildId={entry.guildId}
+                                        selectedChannelId={selectedChannelId}
+                                        subtitle={entry.subtitle}
+                                    />
+                                ))}
+                            </div>
+                        );
+                    }
+
+                    if (sectionId === SECTION_PINNED_CHANNELS) {
+                        if (channelRows.length === 0) return null;
+                        return (
+                            <div key={sectionId} className={sectionClass} {...dragProps}>
+                                <div className="vc-cp-section-header">
+                                    <span className="vc-cp-drag-handle" title="Drag to reorder">≡</span>
+                                    <span>Pinned Channels</span>
+                                </div>
+                                {channelRows.map(({ pin, channel }) => (
+                                    <ChannelRow
+                                        key={pin.channelId}
+                                        channel={channel}
+                                        guildId={pin.guildId}
+                                        selectedChannelId={selectedChannelId}
+                                        showUnpin
+                                    />
+                                ))}
+                            </div>
+                        );
+                    }
+
+                    if (sectionId.startsWith("server:")) {
+                        const guildId = sectionId.slice("server:".length);
+                        if (!data.servers.includes(guildId)) return null;
+                        return (
+                            <div key={sectionId} className={sectionClass} {...dragProps}>
+                                <div className="vc-cp-server-drag-wrap">
+                                    <span className="vc-cp-drag-handle" title="Drag to reorder">≡</span>
+                                </div>
+                                <GuildSection
+                                    guildId={guildId}
+                                    selectedChannelId={selectedChannelId}
+                                />
+                            </div>
+                        );
+                    }
+
+                    return null;
+                })}
             </div>
         </div>
     );
