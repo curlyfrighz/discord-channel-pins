@@ -11,5 +11,5 @@
     "allowSyntheticDefaultImports": true,
     "lib": ["DOM", "ESNext"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "vencord-shims.d.ts"]
 }

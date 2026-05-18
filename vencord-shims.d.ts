@@ -59,9 +59,31 @@ declare module "@webpack/common" {
     export const Text: any;
     export const NavigationRouter: { transitionTo: (path: string) => void };
     export const ChannelStore: { getChannel(id: string): any };
-    export const GuildStore: { getGuild(id: string): any };
+    export const GuildStore: { getGuild(id: string): any; getGuilds(): Record<string, any> };
+    export const GuildChannelStore: { getChannels(guildId: string): any };
+    export const SelectedChannelStore: { getChannelId(): string };
+    export const SelectedGuildStore: { getGuildId(): string };
     export const ReadStateStore: any;
-    export const React: any;
+    export const ActiveJoinedThreadsStore: any;
+    export const FluxDispatcher: any;
+    export const React: {
+        useState<T>(initial: T | (() => T)): [T, (v: T | ((p: T) => T)) => void];
+        useEffect(fn: () => void | (() => void), deps?: readonly any[]): void;
+        useCallback<T extends (...args: any[]) => any>(fn: T, deps: readonly any[]): T;
+        useMemo<T>(fn: () => T, deps: readonly any[]): T;
+        Fragment: any;
+        createElement: any;
+        [key: string]: any;
+    };
+}
+
+declare module "@api/ServerList" {
+    export enum ServerListRenderPosition {
+        Above = 0,
+        In = 1,
+    }
+    export function addServerListElement(position: ServerListRenderPosition, component: any): void;
+    export function removeServerListElement(position: ServerListRenderPosition, component: any): void;
 }
 
 declare module "react" {
@@ -79,4 +101,5 @@ declare namespace JSX {
     interface ElementClass {
         [key: string]: any;
     }
+    type LibraryManagedAttributes<C, P> = P & { key?: any; ref?: any };
 }
