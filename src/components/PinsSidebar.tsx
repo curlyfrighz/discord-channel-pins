@@ -4,6 +4,7 @@ import {
     GuildStore,
     NavigationRouter,
     React,
+    ReactDOM,
     ReadStateStore,
     SelectedChannelStore,
 } from "@webpack/common";
@@ -13,6 +14,7 @@ import {
     getData,
     getPinsMode,
     PinsData,
+    setPinsMode,
     subscribeData,
     subscribePinsMode,
     toggleChannelPin,
@@ -278,9 +280,18 @@ export function PinsSidebar() {
             return { pin, channel: channel as ChannelLike };
         });
 
-    return (
+    const sidebar = (
         <div className="vc-cp-sidebar">
-            <div className="vc-cp-sidebar-header">Channel Pins</div>
+            <div className="vc-cp-sidebar-header">
+                <span>Channel Pins</span>
+                <button
+                    className="vc-cp-sidebar-close"
+                    title="Close"
+                    onClick={() => setPinsMode(false)}
+                >
+                    ✕
+                </button>
+            </div>
             <div className="vc-cp-sidebar-body">
                 {!hasAny && (
                     <div className="vc-cp-empty">
@@ -320,4 +331,9 @@ export function PinsSidebar() {
             </div>
         </div>
     );
+
+    if (ReactDOM && typeof ReactDOM.createPortal === "function") {
+        return ReactDOM.createPortal(sidebar, document.body);
+    }
+    return sidebar;
 }
