@@ -96,6 +96,7 @@ const STARS = `
 precision mediump float;
 uniform float u_time;
 uniform vec2 u_resolution;
+uniform float u_motion;
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -103,28 +104,81 @@ float hash(vec2 p) {
 
 void main() {
     vec2 uv = gl_FragCoord.xy / u_resolution.xy;
-    uv.y += u_time * 0.015;
-
+    float aspect = u_resolution.x / max(u_resolution.y, 1.0);
     vec3 color = vec3(0.0);
 
-    for (int i = 0; i < 3; i++) {
-        float scale = pow(2.0, float(i));
-        vec2 grid = uv * scale * 35.0;
-        vec2 cell = floor(grid);
-        vec2 cellUV = fract(grid);
+    // 80 regular stars with three size tiers (small / medium / large)
+    for (int i = 0; i < 80; i++) {
+        float fi = float(i);
+        vec2 base = vec2(hash(vec2(fi, 1.7)), hash(vec2(fi, 2.3)));
 
-        float h = hash(cell);
-        if (h > 0.965) {
-            vec2 center = vec2(0.5);
-            float d = distance(cellUV, center);
-            float twinkle = 0.5 + 0.5 * sin(u_time * 2.0 + h * 100.0);
-            float brightness = (1.0 - smoothstep(0.0, 0.08, d)) * twinkle / scale;
-            color += vec3(0.7, 0.8, 1.0) * brightness * 1.0;
+        vec2 dir;
+        if (u_motion < 0.5) {
+            dir = vec2(0.0, -1.0);
+        } else {
+            float theta = hash(vec2(fi, 3.1)) * 6.28318;
+            dir = vec2(cos(theta), sin(theta));
+        }
+
+        float speed = 0.004 + 0.018 * hash(vec2(fi, 4.5));
+        vec2 pos = fract(base + dir * u_time * speed);
+
+        vec2 d2 = uv - pos;
+        d2.x *= aspect;
+        float d = length(d2);
+
+        float sizeRoll = hash(vec2(fi, 5.7));
+        float radius;
+        if (sizeRoll < 0.70) {
+            radius = 0.0025 + 0.0015 * hash(vec2(fi, 6.1));
+        } else if (sizeRoll < 0.93) {
+            radius = 0.0055 + 0.0030 * hash(vec2(fi, 6.4));
+        } else {
+            radius = 0.012 + 0.0080 * hash(vec2(fi, 6.8));
+        }
+
+        float twinkle = 0.55 + 0.45 * sin(u_time * 1.4 + fi * 13.7);
+        float brightness = smoothstep(radius, 0.0, d) * twinkle;
+        color += vec3(0.85, 0.9, 1.0) * brightness;
+    }
+
+    // Shooting stars: ~1% of total (1 of ~80) — big head + bright trailing streak
+    for (int i = 0; i < 1; i++) {
+        float fi = float(i) + 1000.0;
+        vec2 base = vec2(hash(vec2(fi, 1.7)), hash(vec2(fi, 2.3)));
+
+        vec2 dir;
+        if (u_motion < 0.5) {
+            dir = vec2(0.0, -1.0);
+        } else {
+            float theta = hash(vec2(fi, 3.1)) * 6.28318;
+            dir = vec2(cos(theta), sin(theta));
+        }
+
+        float speed = 0.08 + 0.06 * hash(vec2(fi, 4.5));
+        vec2 pos = fract(base + dir * u_time * speed);
+
+        vec2 d2 = uv - pos;
+        d2.x *= aspect;
+        float d = length(d2);
+
+        // Bright head
+        float head = smoothstep(0.018, 0.0, d);
+        color += vec3(1.0, 0.95, 0.85) * head * 1.4;
+
+        // Trail: pixels behind the star along -dir
+        vec2 along = dir;
+        float t = dot(-d2, vec2(along.x * aspect, along.y));
+        vec2 perpVec = vec2(-along.y, along.x);
+        float perpDist = abs(dot(d2, vec2(perpVec.x * aspect, perpVec.y)));
+        if (t > 0.0 && t < 0.25) {
+            float trail = exp(-t * 12.0) * smoothstep(0.005, 0.0, perpDist);
+            color += vec3(1.0, 0.95, 0.85) * trail * 1.1;
         }
     }
 
-    vec3 bg = mix(vec3(0.0, 0.0, 0.06), vec3(0.03, 0.0, 0.10), gl_FragCoord.y / u_resolution.y);
-    gl_FragColor = vec4(bg + color, 1.0);
+    // Pure black sky — increasing the canvas opacity adds blackness rather than blue
+    gl_FragColor = vec4(color, 1.0);
 }
 `;
 
@@ -254,10 +308,14 @@ function linkProgram(gl: WebGLRenderingContext, vs: WebGLShader, fs: WebGLShader
 interface ShaderBackgroundProps {
     preset: string;
     opacity?: number;
+    motion?: number; // 0 = uniform down; 1 = random per-particle (used by stars)
+    className?: string;
 }
 
-export function ShaderBackground({ preset, opacity = 1 }: ShaderBackgroundProps) {
+export function ShaderBackground({ preset, opacity = 1, motion = 0, className }: ShaderBackgroundProps) {
     const ref: any = React.useRef(null);
+    const motionRef: any = React.useRef(motion);
+    motionRef.current = motion;
 
     React.useEffect(() => {
         const canvas: HTMLCanvasElement | null = ref.current;
@@ -285,6 +343,7 @@ export function ShaderBackground({ preset, opacity = 1 }: ShaderBackgroundProps)
         const posLoc = glContext.getAttribLocation(program, "a_position");
         const timeLoc = glContext.getUniformLocation(program, "u_time");
         const resLoc = glContext.getUniformLocation(program, "u_resolution");
+        const motionLoc = glContext.getUniformLocation(program, "u_motion");
 
         const buf = glContext.createBuffer();
         glContext.bindBuffer(glContext.ARRAY_BUFFER, buf);
@@ -312,6 +371,7 @@ export function ShaderBackground({ preset, opacity = 1 }: ShaderBackgroundProps)
             const t = (performance.now() - start) / 1000;
             glContext.uniform1f(timeLoc, t);
             glContext.uniform2f(resLoc, w, h);
+            if (motionLoc) glContext.uniform1f(motionLoc, motionRef.current);
             glContext.drawArrays(glContext.TRIANGLES, 0, 6);
             raf = requestAnimationFrame(render);
         };
@@ -334,7 +394,7 @@ export function ShaderBackground({ preset, opacity = 1 }: ShaderBackgroundProps)
     return (
         <canvas
             ref={ref}
-            className="vc-cp-shader-canvas"
+            className={className ?? "vc-cp-shader-canvas"}
             style={{ opacity }}
         />
     );

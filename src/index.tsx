@@ -13,6 +13,7 @@ import {
 import definePlugin from "@utils/types";
 import { Menu, React } from "@webpack/common";
 
+import { DiscordWideBackground } from "./components/DiscordWideBackground";
 import { PinsSidebar } from "./components/PinsSidebar";
 import { ServerListButton } from "./components/ServerListButton";
 import { settings } from "./settings";
@@ -85,6 +86,7 @@ export default definePlugin({
     start() {
         addServerListElement(ServerListRenderPosition.Above, ServerListButton);
         addServerListElement(ServerListRenderPosition.Above, SidebarMount);
+        addServerListElement(ServerListRenderPosition.Above, DiscordWideBackground);
 
         addContextMenuPatch("channel-context", ChannelContextPatch);
         addContextMenuPatch("thread-context", ChannelContextPatch);
@@ -96,6 +98,7 @@ export default definePlugin({
     stop() {
         removeServerListElement(ServerListRenderPosition.Above, ServerListButton);
         removeServerListElement(ServerListRenderPosition.Above, SidebarMount);
+        removeServerListElement(ServerListRenderPosition.Above, DiscordWideBackground);
 
         removeContextMenuPatch("channel-context", ChannelContextPatch);
         removeContextMenuPatch("thread-context", ChannelContextPatch);

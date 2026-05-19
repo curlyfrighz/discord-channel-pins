@@ -30,6 +30,32 @@ export const settings = definePluginSettings({
         description: "Background effect opacity (0–100). Lower if rows are hard to read.",
         default: 70,
     },
+    starsMotion: {
+        type: OptionType.SELECT,
+        description: "Stars preset: motion mode.",
+        options: [
+            { label: "Streak down (cinematic)", value: "down", default: true },
+            { label: "Random per-star direction", value: "random" },
+        ],
+    },
+    discordWideBackground: {
+        type: OptionType.BOOLEAN,
+        description:
+            "Run the shader behind ALL of Discord (not just the pins sidebar). Requires Discord reload to fully apply changes.",
+        default: false,
+    },
+    discordLeftShaderIntensity: {
+        type: OptionType.NUMBER,
+        description:
+            "Shader visibility on the left side of Discord (server list + secondary sidebar). 0–100; higher = more shader.",
+        default: 40,
+    },
+    discordRightShaderIntensity: {
+        type: OptionType.NUMBER,
+        description:
+            "Shader visibility on the right side of Discord (chat panel). 0–100; higher = more shader.",
+        default: 20,
+    },
 });
 
 export function getThreadActiveDays(): number {
@@ -51,4 +77,24 @@ export function getBackgroundOpacity(): number {
     const raw = settings.store.backgroundOpacity;
     if (typeof raw !== "number") return 0.7;
     return Math.max(0, Math.min(1, raw / 100));
+}
+
+export function getStarsMotion(): number {
+    return settings.store.starsMotion === "random" ? 1 : 0;
+}
+
+export function getDiscordWideBackground(): boolean {
+    return !!settings.store.discordWideBackground;
+}
+
+export function getDiscordLeftShaderIntensity(): number {
+    const raw = settings.store.discordLeftShaderIntensity;
+    if (typeof raw !== "number") return 40;
+    return Math.max(0, Math.min(100, raw));
+}
+
+export function getDiscordRightShaderIntensity(): number {
+    const raw = settings.store.discordRightShaderIntensity;
+    if (typeof raw !== "number") return 20;
+    return Math.max(0, Math.min(100, raw));
 }
