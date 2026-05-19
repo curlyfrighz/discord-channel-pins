@@ -12,7 +12,8 @@ import {
     UserStore,
 } from "@webpack/common";
 
-import { getMaxThreadsPerParent, getThreadActiveDays } from "../settings";
+import { getBackgroundEffect, getBackgroundOpacity, getMaxThreadsPerParent, getThreadActiveDays } from "../settings";
+import { ShaderBackground } from "./ShaderBackground";
 import {
     ChannelPin,
     debugLog,
@@ -657,8 +658,14 @@ export function PinsSidebar() {
             return { pin, channel: channel as ChannelLike };
         });
 
+    const bgEffect = getBackgroundEffect();
+    const bgOpacity = getBackgroundOpacity();
+
     const sidebar = (
         <div className="vc-cp-sidebar">
+            {bgEffect !== "none" && (
+                <ShaderBackground preset={bgEffect} opacity={bgOpacity} />
+            )}
             <div className="vc-cp-sidebar-header">
                 <span>Channel Pins</span>
                 <button
