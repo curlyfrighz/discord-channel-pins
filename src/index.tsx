@@ -15,6 +15,7 @@ import { Menu, React } from "@webpack/common";
 
 import { PinsSidebar } from "./components/PinsSidebar";
 import { ServerListButton } from "./components/ServerListButton";
+import { settings } from "./settings";
 import {
     isChannelPinned,
     isServerPinned,
@@ -79,6 +80,7 @@ export default definePlugin({
         "Cross-server pinned channel/server view. Adds a 'Channel Pins' button to the server list that toggles a custom sidebar listing pinned servers (live channel tree) and individually pinned channels, all clickable for native read/write.",
     authors: [{ name: "ianbrent", id: 0n }],
     dependencies: ["ServerListAPI", "ContextMenuAPI"],
+    settings,
 
     start() {
         addServerListElement(ServerListRenderPosition.Above, ServerListButton);

@@ -47,6 +47,22 @@ declare module "@utils/modal" {
 declare module "@utils/types" {
     const definePlugin: (plugin: any) => any;
     export default definePlugin;
+    export const OptionType: {
+        STRING: number;
+        NUMBER: number;
+        BIGINT: number;
+        BOOLEAN: number;
+        SELECT: number;
+        SLIDER: number;
+        COMPONENT: number;
+        CUSTOM: number;
+    };
+}
+
+declare module "@api/Settings" {
+    export function definePluginSettings(settings: Record<string, any>): {
+        store: Record<string, any>;
+    };
 }
 
 declare module "@utils/constants" {

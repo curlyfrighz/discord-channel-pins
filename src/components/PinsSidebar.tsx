@@ -12,6 +12,7 @@ import {
     UserStore,
 } from "@webpack/common";
 
+import { getMaxThreadsPerParent, getThreadActiveDays } from "../settings";
 import {
     ChannelPin,
     debugLog,
@@ -177,13 +178,35 @@ function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle, 
     );
 }
 
-const MAX_THREADS_PER_PARENT = 25;
 const THREAD_BEARING_TYPES = [
     CHANNEL_TYPE.GUILD_TEXT,
     CHANNEL_TYPE.GUILD_ANNOUNCEMENT,
     CHANNEL_TYPE.GUILD_FORUM,
     CHANNEL_TYPE.GUILD_MEDIA,
 ];
+
+const DISCORD_EPOCH_MS = 1420070400000;
+
+function snowflakeToMs(snowflake: string | undefined | null): number {
+    if (!snowflake) return 0;
+    try {
+        return Number(BigInt(snowflake) >> 22n) + DISCORD_EPOCH_MS;
+    } catch {
+        return 0;
+    }
+}
+
+function threadLastActivityMs(thread: any): number {
+    const fromLast = snowflakeToMs(thread?.lastMessageId);
+    if (fromLast > 0) return fromLast;
+    const fromArchive = thread?.threadMetadata?.archiveTimestamp;
+    if (typeof fromArchive === "string") {
+        const t = Date.parse(fromArchive);
+        if (!Number.isNaN(t)) return t;
+    }
+    // Fallback to thread id itself (creation timestamp)
+    return snowflakeToMs(thread?.id);
+}
 
 function lookupThreadsForParent(parentId: string): ChannelLike[] {
     const cs: any = ChannelStore as any;
@@ -195,7 +218,23 @@ function lookupThreadsForParent(parentId: string): ChannelLike[] {
     } catch {
         threads = [];
     }
-    // Sort: unread first (mentions then unread), then most recent activity
+
+    const days = getThreadActiveDays();
+    if (days > 0) {
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        threads = threads.filter(t => {
+            // Always keep threads with unread/mention regardless of cutoff
+            try {
+                const rs: any = ReadStateStore as any;
+                if (rs.hasUnread?.(t.id)) return true;
+                if ((rs.getMentionCount?.(t.id) ?? 0) > 0) return true;
+            } catch {
+                // ignore
+            }
+            return threadLastActivityMs(t) >= cutoff;
+        });
+    }
+
     return threads.slice().sort((a: any, b: any) => {
         const rs: any = ReadStateStore as any;
         let am = 0;
@@ -212,10 +251,7 @@ function lookupThreadsForParent(parentId: string): ChannelLike[] {
         }
         if (am !== bm) return bm - am;
         if (au !== bu) return au ? -1 : 1;
-        const al = a.lastMessageId ?? "0";
-        const bl = b.lastMessageId ?? "0";
-        if (al !== bl) return bl.localeCompare(al);
-        return (a.name ?? "").localeCompare(b.name ?? "");
+        return threadLastActivityMs(b) - threadLastActivityMs(a);
     });
 }
 
@@ -238,7 +274,8 @@ function renderChannelWithThreads(
     const threads = lookupThreadsForParent(ch.id);
     if (threads.length === 0) return rows;
 
-    const visible = threads.slice(0, MAX_THREADS_PER_PARENT);
+    const cap = getMaxThreadsPerParent();
+    const visible = threads.slice(0, cap);
     for (const t of visible) {
         rows.push(
             <ChannelRow
@@ -250,7 +287,7 @@ function renderChannelWithThreads(
             />,
         );
     }
-    if (threads.length > MAX_THREADS_PER_PARENT) {
+    if (threads.length > cap) {
         rows.push(
             <div
                 key={`${ch.id}-more`}
@@ -258,7 +295,7 @@ function renderChannelWithThreads(
                 style={{ paddingLeft: `${16 + 14}px`, opacity: 0.6, cursor: "default" }}
             >
                 <span className="vc-cp-channel-name">
-                    +{threads.length - MAX_THREADS_PER_PARENT} more thread{threads.length - MAX_THREADS_PER_PARENT === 1 ? "" : "s"}…
+                    +{threads.length - cap} more thread{threads.length - cap === 1 ? "" : "s"}…
                 </span>
             </div>,
         );

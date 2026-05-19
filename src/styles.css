@@ -52,17 +52,17 @@
 .vc-cp-sidebar {
     position: fixed;
     top: 0;
-    bottom: 0;
     left: 72px;
     width: 240px;
-    background: var(--background-secondary, #2b2d31);
-    color: var(--interactive-normal, #b5bac1);
+    height: calc(100vh - 80px);
+    background: #000000;
+    color: #e3e5e8;
     z-index: 100;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--background-tertiary, #1e1f22);
+    border-right: 1px solid #1a1a1a;
     overflow: hidden;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.4);
 }
 
 .vc-cp-sidebar-header {
@@ -72,17 +72,17 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    box-shadow: var(--elevation-low, 0 1px 0 rgba(0, 0, 0, 0.2));
-    background: var(--background-secondary, #2b2d31);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+    background: #000000;
     font-weight: 600;
     font-size: 16px;
-    color: var(--header-primary, #f2f3f5);
+    color: #f5f5f5;
 }
 
 .vc-cp-sidebar-close {
     background: transparent;
     border: none;
-    color: var(--interactive-normal, #b5bac1);
+    color: #b5b5b5;
     cursor: pointer;
     font-size: 18px;
     padding: 4px;
@@ -90,13 +90,32 @@
 }
 
 .vc-cp-sidebar-close:hover {
-    color: var(--interactive-hover, #dbdee1);
+    color: #ffffff;
 }
 
 .vc-cp-sidebar-body {
     flex: 1;
     overflow-y: auto;
     padding: 8px 0;
+    scrollbar-width: thin;
+    scrollbar-color: #2a2a2a #000000;
+}
+
+.vc-cp-sidebar-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.vc-cp-sidebar-body::-webkit-scrollbar-track {
+    background: #000000;
+}
+
+.vc-cp-sidebar-body::-webkit-scrollbar-thumb {
+    background: #2a2a2a;
+    border-radius: 4px;
+}
+
+.vc-cp-sidebar-body::-webkit-scrollbar-thumb:hover {
+    background: #3d3d3d;
 }
 
 .vc-cp-section {
@@ -111,7 +130,7 @@
     text-transform: uppercase;
     font-size: 12px;
     font-weight: 600;
-    color: var(--channels-default, #949ba4);
+    color: #b5b5b5;
     padding: 16px 8px 4px 16px;
     letter-spacing: 0.02em;
     display: flex;
@@ -122,7 +141,7 @@
 .vc-cp-drag-handle {
     opacity: 0;
     cursor: grab;
-    color: var(--channels-default, #949ba4);
+    color: #8a8a8a;
     font-size: 14px;
     line-height: 1;
     user-select: none;
@@ -135,7 +154,7 @@
 
 .vc-cp-drag-handle:hover {
     opacity: 1 !important;
-    color: var(--interactive-hover, #dbdee1);
+    color: #ffffff;
 }
 
 .vc-cp-drag-handle:active {
@@ -148,10 +167,10 @@
 }
 
 .vc-cp-section-header.server-divider {
-    color: var(--header-primary, #f2f3f5);
+    color: #f5f5f5;
     text-transform: none;
     font-size: 14px;
-    border-top: 1px solid var(--background-tertiary, #1e1f22);
+    border-top: 1px solid #1a1a1a;
     margin-top: 8px;
     padding-top: 12px;
 }
@@ -160,7 +179,7 @@
     text-transform: uppercase;
     font-size: 11px;
     font-weight: 700;
-    color: var(--channels-default, #949ba4);
+    color: #8a8a8a;
     padding: 12px 8px 2px 16px;
     letter-spacing: 0.02em;
     display: flex;
@@ -174,7 +193,7 @@
 }
 
 .vc-cp-category-header.collapsible:hover {
-    color: var(--interactive-hover, #dbdee1);
+    color: #ffffff;
 }
 
 .vc-cp-category-chevron {
@@ -200,7 +219,7 @@
 
 .vc-cp-channel-subtitle {
     font-size: 11px;
-    color: var(--channels-default, #949ba4);
+    color: #8a8a8a;
     opacity: 0.85;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -216,25 +235,25 @@
     margin: 1px 8px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--channels-default, #949ba4);
+    color: #a5a5a5;
     font-size: 15px;
     min-height: 25px;
     user-select: none;
 }
 
 .vc-cp-channel-row:hover {
-    background: var(--background-modifier-hover, rgba(255, 255, 255, 0.06));
-    color: var(--interactive-hover, #dbdee1);
+    background: rgba(255, 255, 255, 0.06);
+    color: #e3e5e8;
 }
 
 .vc-cp-channel-row.unread {
-    color: var(--interactive-active, #fff);
+    color: #f5f5f5;
     font-weight: 500;
 }
 
 .vc-cp-channel-row.active {
-    background: var(--background-modifier-selected, rgba(255, 255, 255, 0.08));
-    color: var(--interactive-active, #fff);
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
 }
 
 .vc-cp-channel-prefix {
@@ -264,14 +283,14 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--text-normal, #dbdee1);
+    background: #e3e5e8;
     margin-left: auto;
 }
 
 .vc-cp-empty {
     padding: 32px 16px;
     text-align: center;
-    color: var(--channels-default, #949ba4);
+    color: #8a8a8a;
     font-size: 13px;
     line-height: 1.5;
 }
@@ -280,7 +299,7 @@
     opacity: 0;
     background: transparent;
     border: none;
-    color: var(--channels-default, #949ba4);
+    color: #8a8a8a;
     cursor: pointer;
     font-size: 11px;
     padding: 2px 4px;
