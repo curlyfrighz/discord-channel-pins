@@ -58,7 +58,11 @@ declare module "@webpack/common" {
     export const Button: any;
     export const Text: any;
     export const NavigationRouter: { transitionTo: (path: string) => void };
-    export const ChannelStore: { getChannel(id: string): any };
+    export const ChannelStore: {
+        getChannel(id: string): any;
+        getAllThreadsForParent(parentId: string): any[];
+        getAllThreadsForGuild(guildId: string): any[];
+    };
     export const GuildStore: { getGuild(id: string): any; getGuilds(): Record<string, any> };
     export const GuildChannelStore: { getChannels(guildId: string): any };
     export const SelectedChannelStore: { getChannelId(): string };

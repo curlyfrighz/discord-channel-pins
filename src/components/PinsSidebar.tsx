@@ -122,9 +122,10 @@ interface ChannelRowProps {
     selectedChannelId: string;
     showUnpin?: boolean;
     subtitle?: string;
+    indent?: number;
 }
 
-function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle }: ChannelRowProps) {
+function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle, indent }: ChannelRowProps) {
     let hasUnread = false;
     let mentionCount = 0;
     try {
@@ -141,12 +142,14 @@ function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle }
     if (active) classes.push("active");
 
     const displayName = getDisplayName(channel);
+    const rowStyle = indent && indent > 0 ? { paddingLeft: `${16 + indent * 14}px` } : undefined;
 
     return (
         <div
             className={classes.join(" ")}
             onClick={() => navigate(guildId, channel.id)}
             title={displayName}
+            style={rowStyle}
         >
             <span className="vc-cp-channel-prefix">{getChannelPrefix(channel.type)}</span>
             <div className="vc-cp-channel-name-wrap">
@@ -172,6 +175,95 @@ function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle }
             )}
         </div>
     );
+}
+
+const MAX_THREADS_PER_PARENT = 25;
+const THREAD_BEARING_TYPES = [
+    CHANNEL_TYPE.GUILD_TEXT,
+    CHANNEL_TYPE.GUILD_ANNOUNCEMENT,
+    CHANNEL_TYPE.GUILD_FORUM,
+    CHANNEL_TYPE.GUILD_MEDIA,
+];
+
+function lookupThreadsForParent(parentId: string): ChannelLike[] {
+    const cs: any = ChannelStore as any;
+    let threads: any[] = [];
+    try {
+        if (typeof cs.getAllThreadsForParent === "function") {
+            threads = cs.getAllThreadsForParent(parentId) ?? [];
+        }
+    } catch {
+        threads = [];
+    }
+    // Sort: unread first (mentions then unread), then most recent activity
+    return threads.slice().sort((a: any, b: any) => {
+        const rs: any = ReadStateStore as any;
+        let am = 0;
+        let bm = 0;
+        let au = false;
+        let bu = false;
+        try {
+            am = rs.getMentionCount?.(a.id) ?? 0;
+            bm = rs.getMentionCount?.(b.id) ?? 0;
+            au = !!rs.hasUnread?.(a.id);
+            bu = !!rs.hasUnread?.(b.id);
+        } catch {
+            // ignore
+        }
+        if (am !== bm) return bm - am;
+        if (au !== bu) return au ? -1 : 1;
+        const al = a.lastMessageId ?? "0";
+        const bl = b.lastMessageId ?? "0";
+        if (al !== bl) return bl.localeCompare(al);
+        return (a.name ?? "").localeCompare(b.name ?? "");
+    });
+}
+
+function renderChannelWithThreads(
+    ch: ChannelLike,
+    guildId: string | null,
+    selectedChannelId: string,
+): any {
+    const rows: any[] = [
+        <ChannelRow
+            key={ch.id}
+            channel={ch}
+            guildId={guildId}
+            selectedChannelId={selectedChannelId}
+        />,
+    ];
+
+    if (!THREAD_BEARING_TYPES.includes(ch.type)) return rows;
+
+    const threads = lookupThreadsForParent(ch.id);
+    if (threads.length === 0) return rows;
+
+    const visible = threads.slice(0, MAX_THREADS_PER_PARENT);
+    for (const t of visible) {
+        rows.push(
+            <ChannelRow
+                key={`${ch.id}-${t.id}`}
+                channel={t}
+                guildId={guildId}
+                selectedChannelId={selectedChannelId}
+                indent={1}
+            />,
+        );
+    }
+    if (threads.length > MAX_THREADS_PER_PARENT) {
+        rows.push(
+            <div
+                key={`${ch.id}-more`}
+                className="vc-cp-channel-row"
+                style={{ paddingLeft: `${16 + 14}px`, opacity: 0.6, cursor: "default" }}
+            >
+                <span className="vc-cp-channel-name">
+                    +{threads.length - MAX_THREADS_PER_PARENT} more thread{threads.length - MAX_THREADS_PER_PARENT === 1 ? "" : "s"}…
+                </span>
+            </div>,
+        );
+    }
+    return rows;
 }
 
 interface GuildSectionProps {
@@ -240,14 +332,7 @@ function GuildSection({ guildId, selectedChannelId }: GuildSectionProps) {
             <div className="vc-cp-section-header server-divider">{guildName}</div>
             {uncategorized
                 .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-                .map(ch => (
-                    <ChannelRow
-                        key={ch.id}
-                        channel={ch}
-                        guildId={guildId}
-                        selectedChannelId={selectedChannelId}
-                    />
-                ))}
+                .map(ch => renderChannelWithThreads(ch, guildId, selectedChannelId))}
             {sortedCategories.map(([catId, cat]) => {
                 const collapsed = isCategoryCollapsedSync(catId);
                 const sortedChannels = cat.channels.sort(
@@ -285,14 +370,9 @@ function GuildSection({ guildId, selectedChannelId }: GuildSectionProps) {
                             )}
                         </div>
                         {!collapsed &&
-                            sortedChannels.map(ch => (
-                                <ChannelRow
-                                    key={ch.id}
-                                    channel={ch}
-                                    guildId={guildId}
-                                    selectedChannelId={selectedChannelId}
-                                />
-                            ))}
+                            sortedChannels.map(ch =>
+                                renderChannelWithThreads(ch, guildId, selectedChannelId),
+                            )}
                     </React.Fragment>
                 );
             })}
