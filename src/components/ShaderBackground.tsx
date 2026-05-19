@@ -103,11 +103,10 @@ float hash(vec2 p) {
 }
 
 void main() {
-    vec2 uv = gl_FragCoord.xy / u_resolution.xy;
-    float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+    vec2 fragUV = gl_FragCoord.xy / u_resolution.xy;
     vec3 color = vec3(0.0);
 
-    // 80 regular stars with three size tiers (small / medium / large)
+    // 80 regular stars with three size tiers, sized in pixels (not UV)
     for (int i = 0; i < 80; i++) {
         float fi = float(i);
         vec2 base = vec2(hash(vec2(fi, 1.7)), hash(vec2(fi, 2.3)));
@@ -123,26 +122,26 @@ void main() {
         float speed = 0.004 + 0.018 * hash(vec2(fi, 4.5));
         vec2 pos = fract(base + dir * u_time * speed);
 
-        vec2 d2 = uv - pos;
-        d2.x *= aspect;
+        // pixel distance
+        vec2 d2 = (fragUV - pos) * u_resolution;
         float d = length(d2);
 
         float sizeRoll = hash(vec2(fi, 5.7));
         float radius;
         if (sizeRoll < 0.70) {
-            radius = 0.0025 + 0.0015 * hash(vec2(fi, 6.1));
+            radius = 0.5 + 0.3 * hash(vec2(fi, 6.1));
         } else if (sizeRoll < 0.93) {
-            radius = 0.0055 + 0.0030 * hash(vec2(fi, 6.4));
+            radius = 0.9 + 0.5 * hash(vec2(fi, 6.4));
         } else {
-            radius = 0.012 + 0.0080 * hash(vec2(fi, 6.8));
+            radius = 1.6 + 0.7 * hash(vec2(fi, 6.8));
         }
 
         float twinkle = 0.55 + 0.45 * sin(u_time * 1.4 + fi * 13.7);
-        float brightness = smoothstep(radius, 0.0, d) * twinkle;
+        float brightness = smoothstep(radius * 2.0, 0.0, d) * twinkle;
         color += vec3(0.85, 0.9, 1.0) * brightness;
     }
 
-    // Shooting stars: ~1% of total (1 of ~80) — big head + bright trailing streak
+    // 1 shooting star: big head + tapered trailing streak (pixel units)
     for (int i = 0; i < 1; i++) {
         float fi = float(i) + 1000.0;
         vec2 base = vec2(hash(vec2(fi, 1.7)), hash(vec2(fi, 2.3)));
@@ -158,26 +157,22 @@ void main() {
         float speed = 0.08 + 0.06 * hash(vec2(fi, 4.5));
         vec2 pos = fract(base + dir * u_time * speed);
 
-        vec2 d2 = uv - pos;
-        d2.x *= aspect;
+        vec2 d2 = (fragUV - pos) * u_resolution;
         float d = length(d2);
 
-        // Bright head
-        float head = smoothstep(0.018, 0.0, d);
-        color += vec3(1.0, 0.95, 0.85) * head * 1.4;
+        float head = smoothstep(3.0, 0.0, d);
+        color += vec3(1.0, 0.95, 0.85) * head * 1.2;
 
-        // Trail: pixels behind the star along -dir
-        vec2 along = dir;
-        float t = dot(-d2, vec2(along.x * aspect, along.y));
-        vec2 perpVec = vec2(-along.y, along.x);
-        float perpDist = abs(dot(d2, vec2(perpVec.x * aspect, perpVec.y)));
-        if (t > 0.0 && t < 0.25) {
-            float trail = exp(-t * 12.0) * smoothstep(0.005, 0.0, perpDist);
-            color += vec3(1.0, 0.95, 0.85) * trail * 1.1;
+        // Trail in pixels
+        float t = dot(-d2, dir);
+        vec2 perpDir = vec2(-dir.y, dir.x);
+        float perpDist = abs(dot(d2, perpDir));
+        if (t > 0.0 && t < 50.0) {
+            float trail = exp(-t * 0.09) * smoothstep(1.0, 0.0, perpDist);
+            color += vec3(1.0, 0.95, 0.85) * trail * 0.9;
         }
     }
 
-    // Pure black sky — increasing the canvas opacity adds blackness rather than blue
     gl_FragColor = vec4(color, 1.0);
 }
 `;
