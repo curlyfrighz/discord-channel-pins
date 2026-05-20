@@ -312,7 +312,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #e3e5e8;
+    background: var(--status-danger, #ed4245);
     margin-left: auto;
 }
 
@@ -368,13 +368,13 @@
 }
 
 .vc-cp-view-toggle.active {
-    color: #ffd76b;
-    border-color: #4a3a1a;
-    background: rgba(255, 215, 107, 0.08);
+    color: #ffffff;
+    border-color: #4a4a4a;
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .vc-cp-fav-indicator {
-    color: #ffd76b;
+    color: #ffffff;
     font-size: 11px;
     line-height: 1;
     margin-right: -2px;
@@ -394,7 +394,7 @@
 
 .vc-cp-fav-toggle.on {
     opacity: 1;
-    color: #ffd76b;
+    color: #ffffff;
 }
 
 .vc-cp-channel-row:hover .vc-cp-fav-toggle {
@@ -402,7 +402,7 @@
 }
 
 .vc-cp-fav-toggle:hover {
-    color: #ffd76b;
+    color: #ffffff;
 }
 
 .vc-cp-row-menu {
