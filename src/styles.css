@@ -373,14 +373,6 @@
     background: rgba(255, 255, 255, 0.08);
 }
 
-.vc-cp-fav-indicator {
-    color: #ffffff;
-    font-size: 11px;
-    line-height: 1;
-    margin-right: -2px;
-    flex-shrink: 0;
-}
-
 .vc-cp-fav-toggle {
     opacity: 0;
     background: transparent;

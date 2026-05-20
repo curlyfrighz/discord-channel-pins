@@ -197,13 +197,11 @@ function ChannelRow({
         // tolerate API drift
     }
 
-    const fav = isEffectivelyFavorite(channel);
     const directlyFav = isFavoriteSync(channel.id);
     const active = selectedChannelId === channel.id;
     const classes = ["vc-cp-channel-row"];
     if (hasUnread) classes.push("unread");
     if (active) classes.push("active");
-    if (fav) classes.push("favorite");
 
     const displayName = getDisplayName(channel);
     const rowStyle = indent && indent > 0 ? { paddingLeft: `${16 + indent * 14}px` } : undefined;
@@ -226,7 +224,6 @@ function ChannelRow({
             title={displayName}
             style={rowStyle}
         >
-            {fav && <span className="vc-cp-fav-indicator" title="Favorite">★</span>}
             <span className="vc-cp-channel-prefix">{getChannelPrefix(channel.type)}</span>
             <div className="vc-cp-channel-name-wrap">
                 <span className="vc-cp-channel-name">{displayName}</span>
