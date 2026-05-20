@@ -26,15 +26,19 @@ import {
     getData,
     getPinsMode,
     isCategoryCollapsedSync,
+    isFavoriteSync,
     PinsData,
     reorderSections,
     SECTION_PINNED_CHANNELS,
     SECTION_UNREAD,
     setPinsMode,
+    setViewMode,
     subscribeData,
     subscribePinsMode,
     toggleCategoryCollapsed,
     toggleChannelPin,
+    toggleFavorite,
+    ViewMode,
 } from "../store";
 
 interface ChannelLike {
@@ -57,6 +61,10 @@ const CHANNEL_TYPE = {
     GUILD_FORUM: 15,
     GUILD_MEDIA: 16,
 };
+
+const THREAD_TYPES = [10, 11, 12];
+
+const FORUM_LIKE_TYPES = [CHANNEL_TYPE.GUILD_FORUM, CHANNEL_TYPE.GUILD_MEDIA];
 
 function getChannelPrefix(type: number): string {
     switch (type) {
@@ -124,6 +132,42 @@ function navigate(guildId: string | null, channelId: string) {
     }
 }
 
+// A channel is effectively-favorite if it's directly favorited, OR it's a
+// thread whose parent is a forum-like channel and the parent is favorited.
+// Text-channel threads do NOT inherit — per spec, favoriting a text channel
+// does not cascade to its threads.
+function isEffectivelyFavorite(channel: ChannelLike): boolean {
+    if (isFavoriteSync(channel.id)) return true;
+    if (!THREAD_TYPES.includes(channel.type)) return false;
+    const parentId = channel.parent_id;
+    if (!parentId) return false;
+    const parent: any = ChannelStore.getChannel(parentId);
+    if (!parent) return false;
+    if (!FORUM_LIKE_TYPES.includes(parent.type)) return false;
+    return isFavoriteSync(parentId);
+}
+
+function channelHasUnread(channelId: string): boolean {
+    try {
+        return !!(ReadStateStore as any).hasUnread?.(channelId);
+    } catch {
+        return false;
+    }
+}
+
+function shouldShowInFavoritesView(channel: ChannelLike): boolean {
+    if (isEffectivelyFavorite(channel)) return true;
+    return channelHasUnread(channel.id);
+}
+
+interface ContextMenuState {
+    channelId: string;
+    guildId: string | null;
+    x: number;
+    y: number;
+    isPinnedDirect: boolean;
+}
+
 interface ChannelRowProps {
     channel: ChannelLike;
     guildId: string | null;
@@ -131,9 +175,18 @@ interface ChannelRowProps {
     showUnpin?: boolean;
     subtitle?: string;
     indent?: number;
+    onContextMenu: (s: ContextMenuState) => void;
 }
 
-function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle, indent }: ChannelRowProps) {
+function ChannelRow({
+    channel,
+    guildId,
+    selectedChannelId,
+    showUnpin,
+    subtitle,
+    indent,
+    onContextMenu,
+}: ChannelRowProps) {
     let hasUnread = false;
     let mentionCount = 0;
     try {
@@ -144,10 +197,13 @@ function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle, 
         // tolerate API drift
     }
 
+    const fav = isEffectivelyFavorite(channel);
+    const directlyFav = isFavoriteSync(channel.id);
     const active = selectedChannelId === channel.id;
     const classes = ["vc-cp-channel-row"];
     if (hasUnread) classes.push("unread");
     if (active) classes.push("active");
+    if (fav) classes.push("favorite");
 
     const displayName = getDisplayName(channel);
     const rowStyle = indent && indent > 0 ? { paddingLeft: `${16 + indent * 14}px` } : undefined;
@@ -156,9 +212,21 @@ function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle, 
         <div
             className={classes.join(" ")}
             onClick={() => navigate(guildId, channel.id)}
+            onContextMenu={(e: any) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onContextMenu({
+                    channelId: channel.id,
+                    guildId,
+                    x: e.clientX,
+                    y: e.clientY,
+                    isPinnedDirect: !!showUnpin,
+                });
+            }}
             title={displayName}
             style={rowStyle}
         >
+            {fav && <span className="vc-cp-fav-indicator" title="Favorite">★</span>}
             <span className="vc-cp-channel-prefix">{getChannelPrefix(channel.type)}</span>
             <div className="vc-cp-channel-name-wrap">
                 <span className="vc-cp-channel-name">{displayName}</span>
@@ -169,6 +237,16 @@ function ChannelRow({ channel, guildId, selectedChannelId, showUnpin, subtitle, 
             ) : hasUnread ? (
                 <span className="vc-cp-unread-dot" />
             ) : null}
+            <button
+                className={"vc-cp-fav-toggle" + (directlyFav ? " on" : "")}
+                title={directlyFav ? "Remove from favorites" : "Add to favorites"}
+                onClick={(e: any) => {
+                    e.stopPropagation();
+                    toggleFavorite(channel.id);
+                }}
+            >
+                {directlyFav ? "★" : "☆"}
+            </button>
             {showUnpin && (
                 <button
                     className="vc-cp-unpin-btn"
@@ -211,8 +289,13 @@ function threadLastActivityMs(thread: any): number {
         const t = Date.parse(fromArchive);
         if (!Number.isNaN(t)) return t;
     }
-    // Fallback to thread id itself (creation timestamp)
     return snowflakeToMs(thread?.id);
+}
+
+function channelLastActivityMs(channel: any): number {
+    const fromLast = snowflakeToMs(channel?.lastMessageId);
+    if (fromLast > 0) return fromLast;
+    return snowflakeToMs(channel?.id);
 }
 
 function lookupThreadsForParent(parentId: string): ChannelLike[] {
@@ -230,7 +313,6 @@ function lookupThreadsForParent(parentId: string): ChannelLike[] {
     if (days > 0) {
         const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
         threads = threads.filter(t => {
-            // Always keep threads with unread/mention regardless of cutoff
             try {
                 const rs: any = ReadStateStore as any;
                 if (rs.hasUnread?.(t.id)) return true;
@@ -266,20 +348,46 @@ function renderChannelWithThreads(
     ch: ChannelLike,
     guildId: string | null,
     selectedChannelId: string,
+    viewMode: ViewMode,
+    onContextMenu: (s: ContextMenuState) => void,
 ): any {
-    const rows: any[] = [
-        <ChannelRow
-            key={ch.id}
-            channel={ch}
-            guildId={guildId}
-            selectedChannelId={selectedChannelId}
-        />,
-    ];
+    const rows: any[] = [];
+
+    const showParent = viewMode === "all" || shouldShowInFavoritesView(ch);
+    if (showParent) {
+        rows.push(
+            <ChannelRow
+                key={ch.id}
+                channel={ch}
+                guildId={guildId}
+                selectedChannelId={selectedChannelId}
+                onContextMenu={onContextMenu}
+            />,
+        );
+    }
 
     if (!THREAD_BEARING_TYPES.includes(ch.type)) return rows;
 
-    const threads = lookupThreadsForParent(ch.id);
+    let threads = lookupThreadsForParent(ch.id);
+    if (viewMode === "favorites") {
+        threads = threads.filter(t => shouldShowInFavoritesView(t));
+    }
     if (threads.length === 0) return rows;
+
+    // If the parent was filtered out in favorites view but threads survive
+    // (e.g. unread or independently favorited threads under a non-favorite
+    // forum), render a lightweight parent header so context is preserved.
+    if (!showParent && viewMode === "favorites") {
+        rows.push(
+            <ChannelRow
+                key={`${ch.id}-ghost`}
+                channel={ch}
+                guildId={guildId}
+                selectedChannelId={selectedChannelId}
+                onContextMenu={onContextMenu}
+            />,
+        );
+    }
 
     const cap = getMaxThreadsPerParent();
     const visible = threads.slice(0, cap);
@@ -291,6 +399,7 @@ function renderChannelWithThreads(
                 guildId={guildId}
                 selectedChannelId={selectedChannelId}
                 indent={1}
+                onContextMenu={onContextMenu}
             />,
         );
     }
@@ -313,9 +422,11 @@ function renderChannelWithThreads(
 interface GuildSectionProps {
     guildId: string;
     selectedChannelId: string;
+    viewMode: ViewMode;
+    onContextMenu: (s: ContextMenuState) => void;
 }
 
-function GuildSection({ guildId, selectedChannelId }: GuildSectionProps) {
+function GuildSection({ guildId, selectedChannelId, viewMode, onContextMenu }: GuildSectionProps) {
     const guild: any = GuildStore.getGuild(guildId);
     const guildName = guild?.name ?? "(unknown server)";
 
@@ -345,7 +456,6 @@ function GuildSection({ guildId, selectedChannelId }: GuildSectionProps) {
         );
     }
 
-    // Group by category (parent_id)
     const categories = new Map<string, { name: string; position: number; channels: ChannelLike[] }>();
     const uncategorized: ChannelLike[] = [];
 
@@ -371,55 +481,81 @@ function GuildSection({ guildId, selectedChannelId }: GuildSectionProps) {
         (a, b) => a[1].position - b[1].position,
     );
 
+    const renderedUncategorized = uncategorized
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+        .flatMap(ch => renderChannelWithThreads(ch, guildId, selectedChannelId, viewMode, onContextMenu))
+        .filter(Boolean);
+
+    const renderedCategories = sortedCategories.flatMap(([catId, cat]) => {
+        const collapsed = isCategoryCollapsedSync(catId);
+        const sortedChannels = cat.channels.sort(
+            (a, b) => (a.position ?? 0) - (b.position ?? 0),
+        );
+
+        // In favorites view, drop categories that contribute nothing
+        if (viewMode === "favorites") {
+            const anyRender = sortedChannels.some(ch => {
+                if (shouldShowInFavoritesView(ch)) return true;
+                if (THREAD_BEARING_TYPES.includes(ch.type)) {
+                    const threads = lookupThreadsForParent(ch.id);
+                    return threads.some(t => shouldShowInFavoritesView(t));
+                }
+                return false;
+            });
+            if (!anyRender) return [];
+        }
+
+        let catMentions = 0;
+        let catUnread = false;
+        if (collapsed) {
+            for (const ch of sortedChannels) {
+                try {
+                    const rs: any = ReadStateStore as any;
+                    catMentions += rs.getMentionCount?.(ch.id) ?? 0;
+                    if (!catUnread) catUnread = !!rs.hasUnread?.(ch.id);
+                } catch {
+                    // ignore
+                }
+            }
+        }
+
+        return [
+            <React.Fragment key={catId}>
+                <div
+                    className={"vc-cp-category-header collapsible" + (collapsed ? " collapsed" : "")}
+                    onClick={() => toggleCategoryCollapsed(catId)}
+                >
+                    <span className="vc-cp-category-chevron">{collapsed ? "▸" : "▾"}</span>
+                    <span className="vc-cp-category-name">{cat.name}</span>
+                    {collapsed && catMentions > 0 && (
+                        <span className="vc-cp-mention-badge">{catMentions}</span>
+                    )}
+                    {collapsed && catMentions === 0 && catUnread && (
+                        <span className="vc-cp-unread-dot" />
+                    )}
+                </div>
+                {!collapsed &&
+                    sortedChannels.map(ch =>
+                        renderChannelWithThreads(ch, guildId, selectedChannelId, viewMode, onContextMenu),
+                    )}
+            </React.Fragment>,
+        ];
+    });
+
+    // In favorites view, suppress the server header entirely if nothing renders
+    if (
+        viewMode === "favorites" &&
+        renderedUncategorized.length === 0 &&
+        renderedCategories.length === 0
+    ) {
+        return null;
+    }
+
     return (
         <>
             <div className="vc-cp-section-header server-divider">{guildName}</div>
-            {uncategorized
-                .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-                .map(ch => renderChannelWithThreads(ch, guildId, selectedChannelId))}
-            {sortedCategories.map(([catId, cat]) => {
-                const collapsed = isCategoryCollapsedSync(catId);
-                const sortedChannels = cat.channels.sort(
-                    (a, b) => (a.position ?? 0) - (b.position ?? 0),
-                );
-
-                // Aggregate unread/mention for collapsed display
-                let catMentions = 0;
-                let catUnread = false;
-                if (collapsed) {
-                    for (const ch of sortedChannels) {
-                        try {
-                            const rs: any = ReadStateStore as any;
-                            catMentions += rs.getMentionCount?.(ch.id) ?? 0;
-                            if (!catUnread) catUnread = !!rs.hasUnread?.(ch.id);
-                        } catch {
-                            // ignore
-                        }
-                    }
-                }
-
-                return (
-                    <React.Fragment key={catId}>
-                        <div
-                            className={"vc-cp-category-header collapsible" + (collapsed ? " collapsed" : "")}
-                            onClick={() => toggleCategoryCollapsed(catId)}
-                        >
-                            <span className="vc-cp-category-chevron">{collapsed ? "▸" : "▾"}</span>
-                            <span className="vc-cp-category-name">{cat.name}</span>
-                            {collapsed && catMentions > 0 && (
-                                <span className="vc-cp-mention-badge">{catMentions}</span>
-                            )}
-                            {collapsed && catMentions === 0 && catUnread && (
-                                <span className="vc-cp-unread-dot" />
-                            )}
-                        </div>
-                        {!collapsed &&
-                            sortedChannels.map(ch =>
-                                renderChannelWithThreads(ch, guildId, selectedChannelId),
-                            )}
-                    </React.Fragment>
-                );
-            })}
+            {renderedUncategorized}
+            {renderedCategories}
         </>
     );
 }
@@ -430,12 +566,8 @@ interface UnreadEntry {
     subtitle: string;
 }
 
-const THREAD_TYPES = [10, 11, 12]; // ANNOUNCEMENT_THREAD, PUBLIC_THREAD, PRIVATE_THREAD
-
 function enumerateUnreadChannelIds(): string[] {
     const rs: any = ReadStateStore as any;
-    // Discord's ReadStateStore typically exposes one of these enumeration methods.
-    // Try each defensively; fall back to empty list if none work.
     for (const method of ["getAllReadStates", "getReadStates", "getMutableBasicGuildChannelIds"]) {
         try {
             if (typeof rs[method] === "function") {
@@ -457,7 +589,6 @@ function enumerateUnreadChannelIds(): string[] {
 }
 
 function fallbackUnreadChannelIds(): string[] {
-    // Fallback: iterate via GuildChannelStore + ActiveJoinedThreadsStore
     const ids: string[] = [];
     try {
         const guilds = (GuildStore as any).getGuilds?.() ?? {};
@@ -495,7 +626,6 @@ function buildSubtitle(channel: any, guildId: string | null): string {
     const guild: any = (GuildStore as any).getGuild?.(guildId);
     const guildName = guild?.name ?? "(unknown server)";
 
-    // For threads, prepend the parent channel name so the user sees forum context
     if (THREAD_TYPES.includes(channel.type) && channel.parent_id) {
         const parent: any = ChannelStore.getChannel(channel.parent_id);
         if (parent?.name) {
@@ -540,9 +670,6 @@ function scanUnread(pinnedServers: string[], pinnedChannelIds: string[]): Unread
 
         const guildId: string | null = channel.guild_id ?? null;
 
-        // Scope filter: include only if the channel is individually pinned,
-        // its guild is pinned, OR (for threads) the parent channel is
-        // individually pinned or in a pinned guild.
         const isThread = THREAD_TYPES.includes(channel.type);
         const parentId: string | null = channel.parent_id ?? null;
         const channelIsPinned = pinnedChannelSet.has(channelId);
@@ -557,7 +684,6 @@ function scanUnread(pinnedServers: string[], pinnedChannelIds: string[]): Unread
             try {
                 if (ugs.isMuted?.(guildId)) continue;
                 if (ugs.isChannelMuted?.(guildId, channelId)) continue;
-                // For threads, also honor parent channel mute
                 if (isThread && parentId) {
                     if (ugs.isChannelMuted?.(guildId, parentId)) continue;
                 }
@@ -573,18 +699,21 @@ function scanUnread(pinnedServers: string[], pinnedChannelIds: string[]): Unread
         });
     }
 
+    // Favorites pinned to the top (each cluster sorted by recency desc).
     out.sort((a, b) => {
-        let am = 0;
-        let bm = 0;
-        try {
-            am = rs.getMentionCount?.(a.channel.id) ?? 0;
-            bm = rs.getMentionCount?.(b.channel.id) ?? 0;
-        } catch {
-            // ignore
-        }
-        if (am !== bm) return bm - am;
-        if (a.subtitle !== b.subtitle) return a.subtitle.localeCompare(b.subtitle);
-        return (a.channel.name ?? "").localeCompare(b.channel.name ?? "");
+        const af = isEffectivelyFavorite(a.channel) ? 1 : 0;
+        const bf = isEffectivelyFavorite(b.channel) ? 1 : 0;
+        if (af !== bf) return bf - af;
+
+        const at = a.channel.type;
+        const bt = b.channel.type;
+        const aMs = THREAD_TYPES.includes(at)
+            ? threadLastActivityMs(a.channel)
+            : channelLastActivityMs(a.channel);
+        const bMs = THREAD_TYPES.includes(bt)
+            ? threadLastActivityMs(b.channel)
+            : channelLastActivityMs(b.channel);
+        return bMs - aMs;
     });
 
     if (out.length > 150) {
@@ -594,11 +723,73 @@ function scanUnread(pinnedServers: string[], pinnedChannelIds: string[]): Unread
     return out;
 }
 
+interface RowContextMenuProps {
+    state: ContextMenuState;
+    onClose: () => void;
+}
+
+function RowContextMenu({ state, onClose }: RowContextMenuProps) {
+    React.useEffect(() => {
+        const handler = (e: any) => {
+            if (!(e.target as any).closest?.(".vc-cp-row-menu")) onClose();
+        };
+        const esc = (e: any) => {
+            if (e.key === "Escape") onClose();
+        };
+        document.addEventListener("mousedown", handler, true);
+        document.addEventListener("keydown", esc, true);
+        return () => {
+            document.removeEventListener("mousedown", handler, true);
+            document.removeEventListener("keydown", esc, true);
+        };
+    }, [onClose]);
+
+    const isFav = isFavoriteSync(state.channelId);
+
+    // Clamp position to viewport so the menu doesn't get cut off
+    const menuStyle: any = { top: state.y, left: state.x };
+    if (state.x > window.innerWidth - 220) menuStyle.left = window.innerWidth - 220;
+    if (state.y > window.innerHeight - 120) menuStyle.top = window.innerHeight - 120;
+
+    return (
+        <div className="vc-cp-row-menu" style={menuStyle}>
+            <button
+                className="vc-cp-row-menu-item"
+                onClick={() => {
+                    toggleFavorite(state.channelId);
+                    onClose();
+                }}
+            >
+                {isFav ? "★ Remove from Favorites" : "☆ Add to Favorites"}
+            </button>
+            {state.isPinnedDirect && (
+                <button
+                    className="vc-cp-row-menu-item danger"
+                    onClick={() => {
+                        toggleChannelPin({ guildId: state.guildId, channelId: state.channelId });
+                        onClose();
+                    }}
+                >
+                    Unpin Channel
+                </button>
+            )}
+        </div>
+    );
+}
+
 export function PinsSidebar() {
     const [visible, setVisible] = React.useState(getPinsMode());
-    const [data, setData] = React.useState({ servers: [], channels: [], collapsedCategories: [], sectionOrder: [] } as PinsData);
+    const [data, setData] = React.useState({
+        servers: [],
+        channels: [],
+        collapsedCategories: [],
+        sectionOrder: [],
+        favorites: [],
+        viewMode: "all",
+    } as PinsData);
     const [draggingSection, setDraggingSection] = React.useState("");
     const [selectedChannelId, setSelectedChannelId] = React.useState("");
+    const [contextMenu, setContextMenu] = React.useState(null as ContextMenuState | null);
     const [, forceRerender] = React.useState(0);
 
     React.useEffect(() => {
@@ -621,7 +812,6 @@ export function PinsSidebar() {
         };
     }, []);
 
-    // Track selected channel + tick for unread/mention refresh
     React.useEffect(() => {
         if (!visible) return;
         let cancelled = false;
@@ -645,13 +835,13 @@ export function PinsSidebar() {
 
     if (!visible) return null;
 
+    const viewMode: ViewMode = data.viewMode ?? "all";
     const hasAny = data.channels.length > 0 || data.servers.length > 0;
     const unread = scanUnread(
         data.servers,
         data.channels.map(c => c.channelId),
     );
 
-    // Resolve pinned-channel rows
     const channelRows = data.channels
         .map((pin: ChannelPin) => {
             const channel: any = ChannelStore.getChannel(pin.channelId);
@@ -662,10 +852,14 @@ export function PinsSidebar() {
                 };
             }
             return { pin, channel: channel as ChannelLike };
-        });
+        })
+        .filter(({ channel }) => viewMode === "all" || shouldShowInFavoritesView(channel));
 
     const bgEffect = getBackgroundEffect();
     const bgOpacity = getBackgroundOpacity();
+
+    const openCtx = (s: ContextMenuState) => setContextMenu(s);
+    const closeCtx = () => setContextMenu(null);
 
     const sidebar = (
         <div className="vc-cp-sidebar">
@@ -678,13 +872,22 @@ export function PinsSidebar() {
             )}
             <div className="vc-cp-sidebar-header">
                 <span>Channel Pins</span>
-                <button
-                    className="vc-cp-sidebar-close"
-                    title="Close"
-                    onClick={() => setPinsMode(false)}
-                >
-                    ✕
-                </button>
+                <div className="vc-cp-header-actions">
+                    <button
+                        className={"vc-cp-view-toggle" + (viewMode === "favorites" ? " active" : "")}
+                        title={viewMode === "favorites" ? "Showing favorites — click for all pins" : "Showing all pins — click for favorites only"}
+                        onClick={() => setViewMode(viewMode === "favorites" ? "all" : "favorites")}
+                    >
+                        {viewMode === "favorites" ? "★ Favorites" : "All Pins"}
+                    </button>
+                    <button
+                        className="vc-cp-sidebar-close"
+                        title="Close"
+                        onClick={() => setPinsMode(false)}
+                    >
+                        ✕
+                    </button>
+                </div>
             </div>
             <div className="vc-cp-sidebar-body">
                 {!hasAny && unread.length === 0 && (
@@ -766,6 +969,7 @@ export function PinsSidebar() {
                                         guildId={entry.guildId}
                                         selectedChannelId={selectedChannelId}
                                         subtitle={entry.subtitle}
+                                        onContextMenu={openCtx}
                                     />
                                 ))}
                             </div>
@@ -787,6 +991,7 @@ export function PinsSidebar() {
                                         guildId={pin.guildId}
                                         selectedChannelId={selectedChannelId}
                                         showUnpin
+                                        onContextMenu={openCtx}
                                     />
                                 ))}
                             </div>
@@ -804,6 +1009,8 @@ export function PinsSidebar() {
                                 <GuildSection
                                     guildId={guildId}
                                     selectedChannelId={selectedChannelId}
+                                    viewMode={viewMode}
+                                    onContextMenu={openCtx}
                                 />
                             </div>
                         );
@@ -812,6 +1019,7 @@ export function PinsSidebar() {
                     return null;
                 })}
             </div>
+            {contextMenu && <RowContextMenu state={contextMenu} onClose={closeCtx} />}
         </div>
     );
 

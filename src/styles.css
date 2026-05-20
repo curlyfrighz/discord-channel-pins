@@ -341,3 +341,100 @@
 .vc-cp-unpin-btn:hover {
     color: var(--status-danger, #ed4245);
 }
+
+.vc-cp-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.vc-cp-view-toggle {
+    background: transparent;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    color: #b5b5b5;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 8px;
+    letter-spacing: 0.02em;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.vc-cp-view-toggle:hover {
+    color: #ffffff;
+    border-color: #4a4a4a;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.vc-cp-view-toggle.active {
+    color: #ffd76b;
+    border-color: #4a3a1a;
+    background: rgba(255, 215, 107, 0.08);
+}
+
+.vc-cp-fav-indicator {
+    color: #ffd76b;
+    font-size: 11px;
+    line-height: 1;
+    margin-right: -2px;
+    flex-shrink: 0;
+}
+
+.vc-cp-fav-toggle {
+    opacity: 0;
+    background: transparent;
+    border: none;
+    color: #8a8a8a;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+    line-height: 1;
+}
+
+.vc-cp-fav-toggle.on {
+    opacity: 1;
+    color: #ffd76b;
+}
+
+.vc-cp-channel-row:hover .vc-cp-fav-toggle {
+    opacity: 1;
+}
+
+.vc-cp-fav-toggle:hover {
+    color: #ffd76b;
+}
+
+.vc-cp-row-menu {
+    position: fixed;
+    z-index: 10000;
+    background: #18191c;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.vc-cp-row-menu-item {
+    background: transparent;
+    border: none;
+    color: #e3e5e8;
+    cursor: pointer;
+    font-size: 13px;
+    text-align: left;
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+
+.vc-cp-row-menu-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.vc-cp-row-menu-item.danger:hover {
+    background: var(--status-danger, #ed4245);
+    color: white;
+}
