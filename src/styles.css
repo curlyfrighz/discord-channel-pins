@@ -58,7 +58,7 @@
     width: 240px;
     background: #000000;
     color: #e3e5e8;
-    border-top-left-radius: 13px;
+    border-top-left-radius: 11px;
     /* z-index: 1 puts us above Discord's normal secondary sidebar but below
        the user profile bar — Discord's profile bar lives in a stacking context
        with implicit higher priority within the app shell, so this lets the
