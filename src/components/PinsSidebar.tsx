@@ -64,8 +64,6 @@ const CHANNEL_TYPE = {
 
 const THREAD_TYPES = [10, 11, 12];
 
-const FORUM_LIKE_TYPES = [CHANNEL_TYPE.GUILD_FORUM, CHANNEL_TYPE.GUILD_MEDIA];
-
 function getChannelPrefix(type: number): string {
     switch (type) {
         case CHANNEL_TYPE.GUILD_VOICE:
@@ -132,18 +130,15 @@ function navigate(guildId: string | null, channelId: string) {
     }
 }
 
-// A channel is effectively-favorite if it's directly favorited, OR it's a
-// thread whose parent is a forum-like channel and the parent is favorited.
-// Text-channel threads do NOT inherit — per spec, favoriting a text channel
-// does not cascade to its threads.
+// Threads inherit visibility from any favorited parent (forum, media, text,
+// or announcement). The star indicator itself is still driven by direct
+// favorites only — inherited threads show up under their parent without
+// being labeled as favorites themselves.
 function isEffectivelyFavorite(channel: ChannelLike): boolean {
     if (isFavoriteSync(channel.id)) return true;
     if (!THREAD_TYPES.includes(channel.type)) return false;
     const parentId = channel.parent_id;
     if (!parentId) return false;
-    const parent: any = ChannelStore.getChannel(parentId);
-    if (!parent) return false;
-    if (!FORUM_LIKE_TYPES.includes(parent.type)) return false;
     return isFavoriteSync(parentId);
 }
 
