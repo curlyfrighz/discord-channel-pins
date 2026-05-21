@@ -784,10 +784,24 @@ interface ViewModePickerProps {
 }
 
 function ViewModePicker({ viewMode, open, setOpen }: ViewModePickerProps) {
+    const btnRef = React.useRef(null as any);
+    const [rect, setRect] = React.useState(null as DOMRect | null);
+
     React.useEffect(() => {
-        if (!open) return;
+        if (!open) {
+            setRect(null);
+            return;
+        }
+        if (btnRef.current?.getBoundingClientRect) {
+            setRect(btnRef.current.getBoundingClientRect());
+        }
         const handler = (e: any) => {
-            if (!(e.target as any).closest?.(".vc-cp-view-picker")) setOpen(false);
+            if (
+                !(e.target as any).closest?.(".vc-cp-view-picker") &&
+                !(e.target as any).closest?.(".vc-cp-view-menu")
+            ) {
+                setOpen(false);
+            }
         };
         const esc = (e: any) => {
             if (e.key === "Escape") setOpen(false);
@@ -802,31 +816,40 @@ function ViewModePicker({ viewMode, open, setOpen }: ViewModePickerProps) {
 
     const options: ViewMode[] = ["all", "favorites", "unreads"];
 
+    const menu =
+        open && rect ? (
+            <div
+                className="vc-cp-view-menu"
+                style={{ top: rect.bottom + 4, right: window.innerWidth - rect.right }}
+            >
+                {options.map(opt => (
+                    <button
+                        key={opt}
+                        className={"vc-cp-view-menu-item" + (opt === viewMode ? " selected" : "")}
+                        onClick={() => {
+                            setViewMode(opt);
+                            setOpen(false);
+                        }}
+                    >
+                        {VIEW_MODE_LABELS[opt]}
+                    </button>
+                ))}
+            </div>
+        ) : null;
+
     return (
         <div className="vc-cp-view-picker">
             <button
+                ref={btnRef}
                 className={"vc-cp-view-toggle" + (viewMode !== "all" ? " active" : "")}
                 title="Change view"
                 onClick={() => setOpen(!open)}
             >
                 {VIEW_MODE_LABELS[viewMode]} <span className="vc-cp-view-chevron">▾</span>
             </button>
-            {open && (
-                <div className="vc-cp-view-menu">
-                    {options.map(opt => (
-                        <button
-                            key={opt}
-                            className={"vc-cp-view-menu-item" + (opt === viewMode ? " selected" : "")}
-                            onClick={() => {
-                                setViewMode(opt);
-                                setOpen(false);
-                            }}
-                        >
-                            {VIEW_MODE_LABELS[opt]}
-                        </button>
-                    ))}
-                </div>
-            )}
+            {menu && ReactDOM && typeof ReactDOM.createPortal === "function"
+                ? ReactDOM.createPortal(menu, document.body)
+                : menu}
         </div>
     );
 }
