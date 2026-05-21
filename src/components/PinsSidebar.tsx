@@ -155,7 +155,9 @@ function channelHasUnread(channelId: string): boolean {
     }
 }
 
-function shouldShowInFavoritesView(channel: ChannelLike): boolean {
+function shouldShowInView(channel: ChannelLike, viewMode: ViewMode): boolean {
+    if (viewMode === "all") return true;
+    if (viewMode === "unreads") return channelHasUnread(channel.id);
     if (isEffectivelyFavorite(channel)) return true;
     return channelHasUnread(channel.id);
 }
@@ -350,7 +352,7 @@ function renderChannelWithThreads(
 ): any {
     const rows: any[] = [];
 
-    const showParent = viewMode === "all" || shouldShowInFavoritesView(ch);
+    const showParent = shouldShowInView(ch, viewMode);
     if (showParent) {
         rows.push(
             <ChannelRow
@@ -366,15 +368,15 @@ function renderChannelWithThreads(
     if (!THREAD_BEARING_TYPES.includes(ch.type)) return rows;
 
     let threads = lookupThreadsForParent(ch.id);
-    if (viewMode === "favorites") {
-        threads = threads.filter(t => shouldShowInFavoritesView(t));
+    if (viewMode !== "all") {
+        threads = threads.filter(t => shouldShowInView(t, viewMode));
     }
     if (threads.length === 0) return rows;
 
-    // If the parent was filtered out in favorites view but threads survive
-    // (e.g. unread or independently favorited threads under a non-favorite
-    // forum), render a lightweight parent header so context is preserved.
-    if (!showParent && viewMode === "favorites") {
+    // Ghost parent: parent row was filtered out but child threads survived
+    // (e.g. unread threads under an otherwise-quiet forum). Render the parent
+    // anyway so the threads have visible context.
+    if (!showParent && viewMode !== "all") {
         rows.push(
             <ChannelRow
                 key={`${ch.id}-ghost`}
@@ -489,13 +491,13 @@ function GuildSection({ guildId, selectedChannelId, viewMode, onContextMenu }: G
             (a, b) => (a.position ?? 0) - (b.position ?? 0),
         );
 
-        // In favorites view, drop categories that contribute nothing
-        if (viewMode === "favorites") {
+        // Drop categories that contribute no visible rows in the current view.
+        if (viewMode !== "all") {
             const anyRender = sortedChannels.some(ch => {
-                if (shouldShowInFavoritesView(ch)) return true;
+                if (shouldShowInView(ch, viewMode)) return true;
                 if (THREAD_BEARING_TYPES.includes(ch.type)) {
                     const threads = lookupThreadsForParent(ch.id);
-                    return threads.some(t => shouldShowInFavoritesView(t));
+                    return threads.some(t => shouldShowInView(t, viewMode));
                 }
                 return false;
             });
@@ -539,9 +541,9 @@ function GuildSection({ guildId, selectedChannelId, viewMode, onContextMenu }: G
         ];
     });
 
-    // In favorites view, suppress the server header entirely if nothing renders
+    // Suppress the server header entirely when no rows render in the current view.
     if (
-        viewMode === "favorites" &&
+        viewMode !== "all" &&
         renderedUncategorized.length === 0 &&
         renderedCategories.length === 0
     ) {
@@ -774,6 +776,66 @@ function RowContextMenu({ state, onClose }: RowContextMenuProps) {
     );
 }
 
+const VIEW_MODE_LABELS: Record<ViewMode, string> = {
+    all: "All Pins",
+    favorites: "★ Favorites",
+    unreads: "● Unreads",
+};
+
+interface ViewModePickerProps {
+    viewMode: ViewMode;
+    open: boolean;
+    setOpen: (v: boolean) => void;
+}
+
+function ViewModePicker({ viewMode, open, setOpen }: ViewModePickerProps) {
+    React.useEffect(() => {
+        if (!open) return;
+        const handler = (e: any) => {
+            if (!(e.target as any).closest?.(".vc-cp-view-picker")) setOpen(false);
+        };
+        const esc = (e: any) => {
+            if (e.key === "Escape") setOpen(false);
+        };
+        document.addEventListener("mousedown", handler, true);
+        document.addEventListener("keydown", esc, true);
+        return () => {
+            document.removeEventListener("mousedown", handler, true);
+            document.removeEventListener("keydown", esc, true);
+        };
+    }, [open, setOpen]);
+
+    const options: ViewMode[] = ["all", "favorites", "unreads"];
+
+    return (
+        <div className="vc-cp-view-picker">
+            <button
+                className={"vc-cp-view-toggle" + (viewMode !== "all" ? " active" : "")}
+                title="Change view"
+                onClick={() => setOpen(!open)}
+            >
+                {VIEW_MODE_LABELS[viewMode]} <span className="vc-cp-view-chevron">▾</span>
+            </button>
+            {open && (
+                <div className="vc-cp-view-menu">
+                    {options.map(opt => (
+                        <button
+                            key={opt}
+                            className={"vc-cp-view-menu-item" + (opt === viewMode ? " selected" : "")}
+                            onClick={() => {
+                                setViewMode(opt);
+                                setOpen(false);
+                            }}
+                        >
+                            {VIEW_MODE_LABELS[opt]}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function PinsSidebar() {
     const [visible, setVisible] = React.useState(getPinsMode());
     const [data, setData] = React.useState({
@@ -787,6 +849,7 @@ export function PinsSidebar() {
     const [draggingSection, setDraggingSection] = React.useState("");
     const [selectedChannelId, setSelectedChannelId] = React.useState("");
     const [contextMenu, setContextMenu] = React.useState(null as ContextMenuState | null);
+    const [viewMenuOpen, setViewMenuOpen] = React.useState(false);
     const [, forceRerender] = React.useState(0);
 
     React.useEffect(() => {
@@ -850,7 +913,7 @@ export function PinsSidebar() {
             }
             return { pin, channel: channel as ChannelLike };
         })
-        .filter(({ channel }) => viewMode === "all" || shouldShowInFavoritesView(channel));
+        .filter(({ channel }) => shouldShowInView(channel, viewMode));
 
     const bgEffect = getBackgroundEffect();
     const bgOpacity = getBackgroundOpacity();
@@ -870,13 +933,11 @@ export function PinsSidebar() {
             <div className="vc-cp-sidebar-header">
                 <span>Channel Pins</span>
                 <div className="vc-cp-header-actions">
-                    <button
-                        className={"vc-cp-view-toggle" + (viewMode === "favorites" ? " active" : "")}
-                        title={viewMode === "favorites" ? "Showing favorites — click for all pins" : "Showing all pins — click for favorites only"}
-                        onClick={() => setViewMode(viewMode === "favorites" ? "all" : "favorites")}
-                    >
-                        {viewMode === "favorites" ? "★ Favorites" : "All Pins"}
-                    </button>
+                    <ViewModePicker
+                        viewMode={viewMode}
+                        open={viewMenuOpen}
+                        setOpen={setViewMenuOpen}
+                    />
                     <button
                         className="vc-cp-sidebar-close"
                         title="Close"
@@ -952,6 +1013,7 @@ export function PinsSidebar() {
                     const sectionClass = "vc-cp-section" + (isDragging ? " dragging" : "");
 
                     if (sectionId === SECTION_UNREAD) {
+                        if (viewMode === "unreads") return null;
                         if (unread.length === 0) return null;
                         return (
                             <div key={sectionId} className={sectionClass} {...dragProps}>

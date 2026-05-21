@@ -10,7 +10,7 @@ export interface ChannelPin {
     channelId: string;
 }
 
-export type ViewMode = "all" | "favorites";
+export type ViewMode = "all" | "favorites" | "unreads";
 
 export interface PinsData {
     servers: string[];
@@ -67,7 +67,9 @@ export async function getData(): Promise<PinsData> {
     if (cache) return cache;
     const loaded = (await DataStore.get<PinsData>(KEY)) ?? EMPTY;
     const servers = loaded.servers ?? [];
-    const viewMode: ViewMode = loaded.viewMode === "favorites" ? "favorites" : "all";
+    const loadedMode = loaded.viewMode;
+    const viewMode: ViewMode =
+        loadedMode === "favorites" || loadedMode === "unreads" ? loadedMode : "all";
     cache = {
         servers,
         channels: loaded.channels ?? [],
