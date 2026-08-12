@@ -126,7 +126,8 @@
     z-index: 2;
     flex: 1;
     overflow-y: auto;
-    padding: 8px 0;
+    /* Keep the final channel scrollable above Discord's persistent profile panel. */
+    padding: 8px 0 72px;
     scrollbar-width: thin;
     scrollbar-color: #2a2a2a transparent;
     background: rgba(0, 0, 0, 0.35);
